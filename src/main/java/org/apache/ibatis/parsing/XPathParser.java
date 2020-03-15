@@ -15,12 +15,11 @@
  */
 package org.apache.ibatis.parsing;
 
-import java.io.InputStream;
-import java.io.Reader;
-import java.io.StringReader;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
+import org.apache.ibatis.builder.BuilderException;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.*;
 
 import javax.xml.XMLConstants;
 import javax.xml.namespace.QName;
@@ -29,16 +28,12 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathFactory;
-
-import org.apache.ibatis.builder.BuilderException;
-import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import org.xml.sax.EntityResolver;
-import org.xml.sax.ErrorHandler;
-import org.xml.sax.InputSource;
-import org.xml.sax.SAXException;
-import org.xml.sax.SAXParseException;
+import java.io.InputStream;
+import java.io.Reader;
+import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
 
 /**
  * @author Clinton Begin
@@ -46,10 +41,24 @@ import org.xml.sax.SAXParseException;
  */
 public class XPathParser {
 
+  //XML 被解析后，生成的 org.w3c.dom.Document 对象
   private final Document document;
   private boolean validation;
+  /**
+   * org.xml.sax.EntityResolver 对象，XML 实体解析器。
+   * 默认情况下，对 XML 进行校验时，会基于 XML 文档开始位置指定的 DTD 文件或 XSD 文件。
+   * 例如说，解析 mybatis-config.xml 配置文件时，
+   * 会加载 http://mybatis.org/dtd/mybatis-3-config.dtd 这个 DTD 文件。
+   * 但是，如果每个应用启动都从网络加载该 DTD 文件，
+   * 势必在弱网络下体验非常下，甚至说应用部署在无网络的环境下，还会导致下载不下来，
+   * 那么就会出现 XML 校验失败的情况。所以，在实际场景下，
+   * MyBatis 自定义了 EntityResolver 的实现，
+   * 达到使用本地 DTD 文件，从而避免下载网络 DTD 文件的效果
+   */
   private EntityResolver entityResolver;
+  //变量 properties 对象 用来配置需要动态配置的属性值
   private Properties variables;
+  //javax.xml.xpath.XPath 对象，用于查询 XML 中的节点和元素
   private XPath xpath;
 
   public XPathParser(String xml) {
@@ -141,7 +150,9 @@ public class XPathParser {
   }
 
   public String evalString(Object root, String expression) {
+    //获得值
     String result = (String) evaluate(expression, root, XPathConstants.STRING);
+    //如果是动态的 替换 variables
     result = PropertyParser.parse(result, variables);
     return result;
   }
@@ -221,6 +232,7 @@ public class XPathParser {
 
   private Object evaluate(String expression, Object root, QName returnType) {
     try {
+      //获得指定元素或节点的值
       return xpath.evaluate(expression, root, returnType);
     } catch (Exception e) {
       throw new BuilderException("Error evaluating XPath.  Cause: " + e, e);
@@ -230,6 +242,7 @@ public class XPathParser {
   private Document createDocument(InputSource inputSource) {
     // important: this must only be called AFTER common constructor
     try {
+      //创建 DocumentBuilderFactory 对象
       DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
       factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
       factory.setValidating(validation);
@@ -239,7 +252,7 @@ public class XPathParser {
       factory.setIgnoringElementContentWhitespace(false);
       factory.setCoalescing(false);
       factory.setExpandEntityReferences(true);
-
+      //创建 DocumentBuilder 对象
       DocumentBuilder builder = factory.newDocumentBuilder();
       builder.setEntityResolver(entityResolver);
       builder.setErrorHandler(new ErrorHandler() {
@@ -258,12 +271,19 @@ public class XPathParser {
           // NOP
         }
       });
+      //解析 XML 文件
       return builder.parse(inputSource);
     } catch (Exception e) {
       throw new BuilderException("Error creating document instance.  Cause: " + e, e);
     }
   }
 
+  /**
+   * 抽取公共构造方法
+   * @param validation
+   * @param variables
+   * @param entityResolver
+   */
   private void commonConstructor(boolean validation, Properties variables, EntityResolver entityResolver) {
     this.validation = validation;
     this.entityResolver = entityResolver;
